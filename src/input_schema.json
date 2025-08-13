@@ -1,0 +1,31 @@
+{
+    "title": "Faculty Scraper Input",
+    "type": "object",
+    "schemaVersion": 1,
+    "properties": {
+        "startUrls": {
+            "title": "Start URLs",
+            "type": "array",
+            "description": "University faculty directory URLs to scrape",
+            "editor": "requestListSources"
+        },
+        "linkSelector": {
+            "title": "Link selector",
+            "type": "string",
+            "description": "CSS selector for links to follow",
+            "editor": "textfield",
+            "default": "a"
+        },
+        "globPatterns": {
+            "title": "Glob Patterns",
+            "type": "array",
+            "description": "Patterns for URLs to follow",
+            "default": [
+                "https://*/people/faculty/page/*",
+                "https://*/faculty/page/*",
+                "https://*/music/*/faculty/page/*"
+            ]
+        }
+    },
+    "required": ["startUrls"]
+}
