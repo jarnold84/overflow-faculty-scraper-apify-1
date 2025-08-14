@@ -13,6 +13,106 @@ async function pageFunction(context) {
         }
     }
     
+    // UNIVERSAL PROFILE LINK EXTRACTOR - Works for all sites
+    function extractAllProfileLinks($, baseUrl) {
+        const profileLinks = {};
+        
+        context.log.info('Extracting all profile links from page...');
+        
+        $('a').each(function() {
+            const href = $(this).attr('href');
+            const linkText = $(this).text().trim();
+            
+            if (href && linkText && linkText.length > 2 && linkText.length < 100) {
+                // Skip obvious navigation/system links
+                if (linkText.includes('Home') || linkText.includes('Contact') || 
+                    linkText.includes('About') || linkText.includes('Search') ||
+                    linkText.includes('Login') || linkText.includes('Menu') ||
+                    linkText.includes('Next') || linkText.includes('Previous') ||
+                    linkText.includes('View all') || linkText.includes('More')) {
+                    return;
+                }
+                
+                // Convert relative URLs to absolute
+                const fullUrl = href.startsWith('http') ? href : `${baseUrl}${href}`;
+                
+                // Store original format
+                profileLinks[linkText] = fullUrl;
+                
+                // Handle "Last, First" format (common in faculty directories)
+                if (linkText.includes(',')) {
+                    const nameParts = linkText.split(',').map(part => part.trim());
+                    if (nameParts.length === 2) {
+                        const firstName = nameParts[1];
+                        const lastName = nameParts[0];
+                        const fullName = `${firstName} ${lastName}`.trim();
+                        profileLinks[fullName] = fullUrl;
+                    }
+                }
+                
+                // Handle "First Last" format by creating variations
+                const words = linkText.split(' ').filter(word => word.length > 1);
+                if (words.length >= 2 && words.length <= 4) {
+                    // Create "Last, First" variation
+                    if (words.length === 2) {
+                        const lastFirstFormat = `${words[1]}, ${words[0]}`;
+                        profileLinks[lastFirstFormat] = fullUrl;
+                    }
+                }
+            }
+        });
+        
+        context.log.info(`Found ${Object.keys(profileLinks).length} potential profile links`);
+        return profileLinks;
+    }
+    
+    // Helper function to find best matching profile link
+    function findProfileLink(name, allProfileLinks) {
+        // Try exact match first
+        if (allProfileLinks[name]) {
+            return allProfileLinks[name];
+        }
+        
+        // Try case-insensitive exact match
+        const lowerName = name.toLowerCase();
+        for (const [linkName, url] of Object.entries(allProfileLinks)) {
+            if (linkName.toLowerCase() === lowerName) {
+                return url;
+            }
+        }
+        
+        // Try partial matching - both directions
+        for (const [linkName, url] of Object.entries(allProfileLinks)) {
+            const lowerLinkName = linkName.toLowerCase();
+            
+            // Check if link name contains our name or vice versa
+            if (lowerLinkName.includes(lowerName) || lowerName.includes(lowerLinkName)) {
+                return url;
+            }
+            
+            // Check individual name parts
+            const nameWords = lowerName.split(' ').filter(word => word.length > 2);
+            const linkWords = lowerLinkName.split(/[, ]/).filter(word => word.length > 2);
+            
+            let matchCount = 0;
+            for (const nameWord of nameWords) {
+                for (const linkWord of linkWords) {
+                    if (nameWord === linkWord || nameWord.includes(linkWord) || linkWord.includes(nameWord)) {
+                        matchCount++;
+                        break;
+                    }
+                }
+            }
+            
+            // If most name parts match, consider it a good match
+            if (matchCount >= Math.min(nameWords.length, 2)) {
+                return url;
+            }
+        }
+        
+        return '';
+    }
+    
     // Helper function to calculate email confidence score
     function calculateEmailConfidence(name, email) {
         if (!email || !name) return 0;
@@ -139,6 +239,10 @@ async function pageFunction(context) {
     const facultyData = [];
     const seenFaculty = new Set();
     
+    // EXTRACT ALL PROFILE LINKS AT THE START - Universal for all methods
+    const baseUrl = getBaseUrl(context.request.url);
+    const allProfileLinks = extractAllProfileLinks($, baseUrl);
+    
     // Extract social media links once for the entire page
     const pageSocials = extractSocials($, context);
     
@@ -152,10 +256,8 @@ async function pageFunction(context) {
             return;
         }
         
-        const profileLink = nameElement.attr('href');
-        const baseUrl = getBaseUrl(context.request.url);
-        const fullProfileLink = profileLink && profileLink.startsWith('/') ? 
-                               `${baseUrl}${profileLink}` : profileLink || '';
+        // Use universal profile link finder
+        const profileLink = findProfileLink(name, allProfileLinks);
         
         const titles = [];
         $row.find('li').each(function() {
@@ -165,13 +267,13 @@ async function pageFunction(context) {
             }
         });
         
-        const uniqueId = `${name}-${fullProfileLink}`;
+        const uniqueId = `${name}-${profileLink}`;
         if (!seenFaculty.has(uniqueId)) {
             seenFaculty.add(uniqueId);
             facultyData.push({
                 name: name,
                 titles: titles,
-                profileLink: fullProfileLink,
+                profileLink: profileLink,
                 email: '',
                 emailConfidence: 0,
                 emailSource: 'none',
@@ -193,22 +295,10 @@ async function pageFunction(context) {
         }
     });
     
-    // Method 2: Illinois-style - improved with profile links
+    // Method 2: Illinois-style - improved with universal profile link extraction
     if (facultyData.length === 0) {
         const pageText = $('body').text();
         const lines = pageText.split('\n').map(line => line.trim()).filter(line => line && line.length > 1);
-        
-        // Also extract all profile links from the page
-        const profileLinks = {};
-        $('a').each(function() {
-            const href = $(this).attr('href');
-            const linkText = $(this).text().trim();
-            if (href && (href.includes('/people/') || href.includes('/faculty/')) && 
-                linkText && linkText.length > 2) {
-                const baseUrl = getBaseUrl(context.request.url);
-                profileLinks[linkText] = href.startsWith('http') ? href : `${baseUrl}${href}`;
-            }
-        });
         
         for (let i = 0; i < lines.length - 1; i++) {
             const currentLine = lines[i];
@@ -261,8 +351,8 @@ async function pageFunction(context) {
                     const name = currentLine;
                     const email = foundEmail;
                     
-                    // Look for profile link for this faculty member
-                    const profileLink = profileLinks[name] || '';
+                    // Use universal profile link finder
+                    const profileLink = findProfileLink(name, allProfileLinks);
                     
                     const emailConfidence = calculateEmailConfidence(name, email);
                     const emailSource = emailConfidence > 0.7 ? 'name-matched' : 'proximity-fallback';
@@ -305,9 +395,6 @@ async function pageFunction(context) {
     if (facultyData.length === 0) {
         context.log.info('Trying Utah-style extraction method');
         
-        // Get the base URL for relative links
-        const baseUrl = getBaseUrl(context.request.url);
-        
         // Extract all faculty links that look like profile pages
         $('a').each(function() {
             const href = $(this).attr('href');
@@ -323,7 +410,8 @@ async function pageFunction(context) {
                 !href.includes('index.php') && !href.includes('resources') &&
                 !href.includes('open-positions') && !href.includes('faculty-area')) {
                 
-                const fullProfileLink = href.startsWith('http') ? href : `${baseUrl}${href}`;
+                // Use universal profile link finder (more reliable than local extraction)
+                const profileLink = findProfileLink(name, allProfileLinks);
                 
                 // Look for email links near this faculty member
                 let email = '';
@@ -393,13 +481,13 @@ async function pageFunction(context) {
                 const emailConfidence = calculateEmailConfidence(name, email);
                 const emailSource = email ? (emailConfidence > 0.7 ? 'name-matched' : 'proximity-fallback') : 'none';
                 
-                const uniqueId = `${name}-${fullProfileLink}`;
+                const uniqueId = `${name}-${profileLink}`;
                 if (!seenFaculty.has(uniqueId)) {
                     seenFaculty.add(uniqueId);
                     facultyData.push({
                         name: name,
                         titles: titles,
-                        profileLink: fullProfileLink,
+                        profileLink: profileLink,
                         email: email,
                         emailConfidence: emailConfidence,
                         emailSource: emailSource,
@@ -427,7 +515,6 @@ async function pageFunction(context) {
     if (true) {
         context.log.info('Trying tabular extraction method (UNF style)');
         
-        const baseUrl = getBaseUrl(context.request.url);
         let tabularResults = [];
         const seenTabular = new Set();
         
@@ -436,7 +523,6 @@ async function pageFunction(context) {
             // Extract name from link text
             const nameLink = $(this).find('a').first();
             const name = nameLink.text().trim();
-            const profileLinkHref = nameLink.attr('href');
             
             // Skip if no name or obvious non-faculty entries
             if (!name || name.length < 3 || name.length > 50 ||
@@ -446,9 +532,8 @@ async function pageFunction(context) {
                 return;
             }
             
-            // Build full profile link
-            const fullProfileLink = profileLinkHref && profileLinkHref.startsWith('/') ? 
-                                   `${baseUrl}${profileLinkHref}` : profileLinkHref || '';
+            // Use universal profile link finder
+            const profileLink = findProfileLink(name, allProfileLinks);
             
             // Extract email, phone, title from structured cells or nearby text
             const cells = $(this).find('td, .cell, .info');
@@ -508,13 +593,13 @@ async function pageFunction(context) {
                 const emailConfidence = calculateEmailConfidence(name, email);
                 const emailSource = email ? (emailConfidence > 0.7 ? 'name-matched' : 'proximity-fallback') : 'none';
                 
-                const uniqueId = `${name}-${email}-${fullProfileLink}`;
+                const uniqueId = `${name}-${email}-${profileLink}`;
                 if (!seenTabular.has(uniqueId)) {
                     seenTabular.add(uniqueId);
                     tabularResults.push({
                         name: name,
                         titles: titles,
-                        profileLink: fullProfileLink,
+                        profileLink: profileLink,
                         email: email,
                         emailConfidence: emailConfidence,
                         emailSource: emailSource,
@@ -555,15 +640,20 @@ async function pageFunction(context) {
                 faculty.name.length < 3
             );
             
+            // Calculate profile link rates
+            const existingLinkRate = facultyData.length > 0 ? facultyData.filter(f => f.profileLink).length / facultyData.length : 0;
+            const tabularLinkRate = tabularResults.length > 0 ? tabularResults.filter(f => f.profileLink).length / tabularResults.length : 0;
+            
             const existingBadRate = facultyData.length > 0 ? existingBadNames.length / facultyData.length : 1;
             const tabularBadRate = tabularResults.length > 0 ? tabularBadNames.length / tabularResults.length : 1;
             
-            context.log.info(`Existing methods bad rate: ${existingBadRate}, Tabular bad rate: ${tabularBadRate}`);
+            context.log.info(`Existing methods bad rate: ${existingBadRate}, link rate: ${existingLinkRate}`);
+            context.log.info(`Tabular bad rate: ${tabularBadRate}, link rate: ${tabularLinkRate}`);
             context.log.info(`Existing found: ${facultyData.length}, Tabular found: ${tabularResults.length}`);
             
-            // Use tabular results if they're better quality
-            if (tabularBadRate < existingBadRate) {
-                context.log.info('Using tabular results - better quality');
+            // Use tabular results if they're better quality OR have significantly more profile links
+            if (tabularBadRate < existingBadRate || (tabularLinkRate > existingLinkRate + 0.2)) {
+                context.log.info('Using tabular results - better quality or profile links');
                 
                 // Clear and rebuild facultyData with tabular results
                 facultyData.length = 0;
@@ -599,8 +689,6 @@ async function pageFunction(context) {
             facultyData.length = 0;
             seenFaculty.clear();
             
-            const baseUrl = getBaseUrl(context.request.url);
-            
             // Alternative parsing - look for actual faculty names in text content
             $('table, .directory, .faculty-list').find('tr, div, p').each(function() {
                 const rowText = $(this).text().trim();
@@ -628,14 +716,8 @@ async function pageFunction(context) {
                         let title = rowText.replace(potentialName, '').replace(email, '').replace(phone, '');
                         title = title.replace(/\s+/g, ' ').trim();
                         
-                        // Look for profile link
-                        const nameLink = $(this).find('a').filter(function() {
-                            return $(this).text().includes(potentialName);
-                        }).first();
-                        
-                        const profileLinkHref = nameLink.attr('href');
-                        const fullProfileLink = profileLinkHref && profileLinkHref.startsWith('/') ? 
-                                               `${baseUrl}${profileLinkHref}` : profileLinkHref || '';
+                        // Use universal profile link finder
+                        const profileLink = findProfileLink(potentialName, allProfileLinks);
                         
                         const emailConfidence = calculateEmailConfidence(potentialName, email);
                         const emailSource = email ? (emailConfidence > 0.7 ? 'name-matched' : 'proximity-fallback') : 'none';
@@ -646,7 +728,7 @@ async function pageFunction(context) {
                             facultyData.push({
                                 name: potentialName,
                                 titles: title ? [title] : [],
-                                profileLink: fullProfileLink,
+                                profileLink: profileLink,
                                 email: email,
                                 emailConfidence: emailConfidence,
                                 emailSource: emailSource,
