@@ -108,6 +108,8 @@ async function pageFunction(context) {
                 'northwestern.edu': 'Northwestern University',
                 'yale.edu': 'Yale University',
                 'berklee.edu': 'Berklee College of Music',
+                'unf.edu': 'University of North Florida',
+                'sc.edu': 'University of South Carolina',
                 'music.utah.edu': 'University of Utah',
                 'music.indiana.edu': 'Indiana University',
                 'music.illinois.edu': 'University of Illinois',
@@ -419,6 +421,255 @@ async function pageFunction(context) {
                 }
             }
         });
+    }
+    
+    // Method 4: Tabular faculty directory (UNF style) - ALWAYS RUNS NOW
+    if (true) {
+        context.log.info('Trying tabular extraction method (UNF style)');
+        
+        const baseUrl = getBaseUrl(context.request.url);
+        let tabularResults = [];
+        const seenTabular = new Set();
+        
+        // Look for faculty in table rows or structured containers
+        $('tr, .faculty-row, .faculty-member, .directory-row').each(function() {
+            // Extract name from link text
+            const nameLink = $(this).find('a').first();
+            const name = nameLink.text().trim();
+            const profileLinkHref = nameLink.attr('href');
+            
+            // Skip if no name or obvious non-faculty entries
+            if (!name || name.length < 3 || name.length > 50 ||
+                name.includes('Email') || name.includes('Phone') ||
+                name.includes('Office') || name.includes('Room') ||
+                name.includes('Directory') || name.includes('Faculty')) {
+                return;
+            }
+            
+            // Build full profile link
+            const fullProfileLink = profileLinkHref && profileLinkHref.startsWith('/') ? 
+                                   `${baseUrl}${profileLinkHref}` : profileLinkHref || '';
+            
+            // Extract email, phone, title from structured cells or nearby text
+            const cells = $(this).find('td, .cell, .info');
+            let email = '';
+            let phone = '';
+            let titles = [];
+            
+            // Method A: Look in table cells
+            cells.each(function() {
+                const cellText = $(this).text().trim();
+                
+                // Check for email pattern
+                if (cellText.includes('@') && cellText.includes('.edu')) {
+                    email = cellText;
+                }
+                
+                // Check for phone pattern
+                const phoneMatch = cellText.match(/\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
+                if (phoneMatch) {
+                    phone = phoneMatch[0];
+                }
+                
+                // Check for title (not email, phone, or name)
+                if (cellText && !cellText.includes('@') && !phoneMatch && 
+                    cellText !== name && cellText.length > 5 && cellText.length < 100) {
+                    titles.push(cellText);
+                }
+            });
+            
+            // Method B: Look in all text content of the row if cells didn't work
+            if (!email || titles.length === 0) {
+                const rowText = $(this).text();
+                
+                // Extract email
+                const emailMatch = rowText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+                if (emailMatch && !email) {
+                    email = emailMatch[0];
+                }
+                
+                // Extract phone
+                const phoneMatch = rowText.match(/\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
+                if (phoneMatch && !phone) {
+                    phone = phoneMatch[0];
+                }
+                
+                // Extract title by removing name, email, phone from row text
+                let cleanedText = rowText.replace(name, '').replace(email, '').replace(phone, '');
+                cleanedText = cleanedText.replace(/\s+/g, ' ').trim();
+                
+                if (cleanedText && cleanedText.length > 5 && cleanedText.length < 100) {
+                    titles.push(cleanedText);
+                }
+            }
+            
+            // Only add if we have a reasonable name (at least first + last)
+            if (name.split(' ').length >= 2) {
+                const emailConfidence = calculateEmailConfidence(name, email);
+                const emailSource = email ? (emailConfidence > 0.7 ? 'name-matched' : 'proximity-fallback') : 'none';
+                
+                const uniqueId = `${name}-${email}-${fullProfileLink}`;
+                if (!seenTabular.has(uniqueId)) {
+                    seenTabular.add(uniqueId);
+                    tabularResults.push({
+                        name: name,
+                        titles: titles,
+                        profileLink: fullProfileLink,
+                        email: email,
+                        emailConfidence: emailConfidence,
+                        emailSource: emailSource,
+                        phone: phone,
+                        bio: '',
+                        socials: {
+                            youtube: '',
+                            facebook: '',
+                            instagram: '',
+                            reddit: '',
+                            linkedin: '',
+                            tiktok: ''
+                        },
+                        university: getUniversityName(context.request.url),
+                        department: 'School of Music',
+                        sourceUrl: context.request.url,
+                        scrapedAt: new Date().toISOString()
+                    });
+                }
+            }
+        });
+        
+        // If Method 4 found results, compare quality with existing results
+        if (tabularResults.length > 0) {
+            // Check quality of existing results (from Methods 1-3)
+            const existingBadNames = facultyData.filter(faculty => 
+                faculty.name.match(/^\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}$/) || 
+                faculty.name === 'Email' || 
+                faculty.name === 'Phone' ||
+                faculty.name.length < 3
+            );
+            
+            // Check quality of Method 4 results  
+            const tabularBadNames = tabularResults.filter(faculty => 
+                faculty.name.match(/^\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}$/) || 
+                faculty.name === 'Email' || 
+                faculty.name === 'Phone' ||
+                faculty.name.length < 3
+            );
+            
+            const existingBadRate = facultyData.length > 0 ? existingBadNames.length / facultyData.length : 1;
+            const tabularBadRate = tabularResults.length > 0 ? tabularBadNames.length / tabularResults.length : 1;
+            
+            context.log.info(`Existing methods bad rate: ${existingBadRate}, Tabular bad rate: ${tabularBadRate}`);
+            context.log.info(`Existing found: ${facultyData.length}, Tabular found: ${tabularResults.length}`);
+            
+            // Use tabular results if they're better quality
+            if (tabularBadRate < existingBadRate) {
+                context.log.info('Using tabular results - better quality');
+                
+                // Clear and rebuild facultyData with tabular results
+                facultyData.length = 0;
+                seenFaculty.clear();
+                
+                tabularResults.forEach(faculty => {
+                    const uniqueId = `${faculty.name}-${faculty.email}-${faculty.profileLink}`;
+                    if (!seenFaculty.has(uniqueId)) {
+                        seenFaculty.add(uniqueId);
+                        facultyData.push(faculty);
+                    }
+                });
+            } else {
+                context.log.info('Using existing results - better or equal quality');
+            }
+        }
+    }
+    
+    // Data quality check: If we have results but names look like phone numbers,
+    // clear results and try alternative regex-based parsing
+    if (facultyData.length > 0) {
+        const phoneNumberNames = facultyData.filter(faculty => 
+            faculty.name.match(/^\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}$/) || 
+            faculty.name === 'Email' || 
+            faculty.name === 'Phone'
+        );
+        
+        // If more than 50% of results have phone numbers as names, the parsing is wrong
+        if (phoneNumberNames.length > facultyData.length * 0.5) {
+            context.log.info('Detected poor data quality, trying alternative regex parsing');
+            
+            // Clear bad results and try alternative approach
+            facultyData.length = 0;
+            seenFaculty.clear();
+            
+            const baseUrl = getBaseUrl(context.request.url);
+            
+            // Alternative parsing - look for actual faculty names in text content
+            $('table, .directory, .faculty-list').find('tr, div, p').each(function() {
+                const rowText = $(this).text().trim();
+                
+                // Look for lines that have a name pattern (First Last) followed by title and contact info
+                const nameMatch = rowText.match(/([A-Z][a-z]+\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]*)?)/);
+                
+                if (nameMatch) {
+                    const potentialName = nameMatch[1];
+                    
+                    // Verify this looks like a faculty name
+                    if (potentialName.split(' ').length >= 2 && potentialName.length < 50 &&
+                        !potentialName.includes('Email') && !potentialName.includes('Phone') &&
+                        !potentialName.includes('Room') && !potentialName.includes('Office')) {
+                        
+                        // Extract email from the same text
+                        const emailMatch = rowText.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+                        const email = emailMatch ? emailMatch[1] : '';
+                        
+                        // Extract phone from the same text
+                        const phoneMatch = rowText.match(/(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/);
+                        const phone = phoneMatch ? phoneMatch[1] : '';
+                        
+                        // Extract title (everything after name, before email/phone)
+                        let title = rowText.replace(potentialName, '').replace(email, '').replace(phone, '');
+                        title = title.replace(/\s+/g, ' ').trim();
+                        
+                        // Look for profile link
+                        const nameLink = $(this).find('a').filter(function() {
+                            return $(this).text().includes(potentialName);
+                        }).first();
+                        
+                        const profileLinkHref = nameLink.attr('href');
+                        const fullProfileLink = profileLinkHref && profileLinkHref.startsWith('/') ? 
+                                               `${baseUrl}${profileLinkHref}` : profileLinkHref || '';
+                        
+                        const emailConfidence = calculateEmailConfidence(potentialName, email);
+                        const emailSource = email ? (emailConfidence > 0.7 ? 'name-matched' : 'proximity-fallback') : 'none';
+                        
+                        const uniqueId = `${potentialName}-${email}`;
+                        if (!seenFaculty.has(uniqueId)) {
+                            seenFaculty.add(uniqueId);
+                            facultyData.push({
+                                name: potentialName,
+                                titles: title ? [title] : [],
+                                profileLink: fullProfileLink,
+                                email: email,
+                                emailConfidence: emailConfidence,
+                                emailSource: emailSource,
+                                phone: phone,
+                                bio: '',
+                                socials: {
+                                    youtube: '',
+                                    facebook: '',
+                                    instagram: '',
+                                    reddit: '',
+                                    linkedin: '',
+                                    tiktok: ''
+                                },
+                                university: getUniversityName(context.request.url),
+                                department: 'School of Music',
+                                sourceUrl: context.request.url,
+                                scrapedAt: new Date().toISOString()
+                            });
+                        }
+                    }
+                }
+            });
+        }
     }
     
     context.log.info(`Found ${facultyData.length} unique faculty members`);
