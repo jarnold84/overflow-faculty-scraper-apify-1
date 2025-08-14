@@ -236,6 +236,80 @@ async function pageFunction(context) {
         }
     }
     
+    // Helper function to dynamically detect department from URL and page content
+    function getDepartmentName(url, $) {
+        try {
+            // First check URL patterns
+            const urlLower = url.toLowerCase();
+            
+            if (urlLower.includes('/music/')) {
+                return 'School of Music';
+            } else if (urlLower.includes('/arts/')) {
+                return 'School of Arts';
+            } else if (urlLower.includes('/theater/') || urlLower.includes('/theatre/')) {
+                return 'Department of Theater';
+            } else if (urlLower.includes('/dance/')) {
+                return 'Department of Dance';
+            } else if (urlLower.includes('/psychology/')) {
+                return 'Department of Psychology';
+            } else if (urlLower.includes('/counseling/')) {
+                return 'Department of Counseling';
+            } else if (urlLower.includes('/therapy/')) {
+                return 'Department of Therapy';
+            }
+            
+            // Then check page content for department indicators
+            const pageText = $('body').text().toLowerCase();
+            const titleText = $('title').text().toLowerCase();
+            const h1Text = $('h1').first().text().toLowerCase();
+            
+            // Check all text sources
+            const allText = `${pageText} ${titleText} ${h1Text}`;
+            
+            // Music-related patterns
+            if (allText.includes('school of music') || allText.includes('college of music')) {
+                return allText.includes('college of music') ? 'College of Music' : 'School of Music';
+            } else if (allText.includes('conservatory')) {
+                return 'Conservatory';
+            } else if (allText.includes('department of music')) {
+                return 'Department of Music';
+            } else if (allText.includes('music faculty') || allText.includes('music department')) {
+                return 'School of Music';
+            }
+            
+            // Arts-related patterns
+            else if (allText.includes('school of arts') || allText.includes('college of arts')) {
+                return allText.includes('college of arts') ? 'College of Arts' : 'School of Arts';
+            } else if (allText.includes('fine arts')) {
+                return 'School of Fine Arts';
+            } else if (allText.includes('performing arts')) {
+                return 'School of Performing Arts';
+            }
+            
+            // Psychology/Therapy patterns (for your future expansion)
+            else if (allText.includes('school of psychology') || allText.includes('department of psychology')) {
+                return allText.includes('school of psychology') ? 'School of Psychology' : 'Department of Psychology';
+            } else if (allText.includes('counseling')) {
+                return 'Department of Counseling';
+            } else if (allText.includes('therapy')) {
+                return 'Department of Therapy';
+            }
+            
+            // Theater/Dance patterns
+            else if (allText.includes('theater') || allText.includes('theatre')) {
+                return 'Department of Theater';
+            } else if (allText.includes('dance')) {
+                return 'Department of Dance';
+            }
+            
+            // Default fallback - still music-focused for your current use case
+            return 'School of Music';
+            
+        } catch (e) {
+            return 'School of Music'; // Safe fallback
+        }
+    }
+    
     const facultyData = [];
     const seenFaculty = new Set();
     
@@ -288,7 +362,7 @@ async function pageFunction(context) {
                     tiktok: ''
                 },
                 university: getUniversityName(context.request.url),
-                department: 'School of Music',
+                department: getDepartmentName(context.request.url, $),
                 sourceUrl: context.request.url,
                 scrapedAt: new Date().toISOString()
             });
@@ -378,7 +452,7 @@ async function pageFunction(context) {
                                 tiktok: ''
                             },
                             university: getUniversityName(context.request.url),
-                            department: 'School of Music',
+                            department: getDepartmentName(context.request.url, $),
                             sourceUrl: context.request.url,
                             scrapedAt: new Date().toISOString()
                         });
@@ -502,7 +576,7 @@ async function pageFunction(context) {
                             tiktok: ''
                         },
                         university: getUniversityName(context.request.url),
-                        department: 'School of Music',
+                        department: getDepartmentName(context.request.url, $),
                         sourceUrl: context.request.url,
                         scrapedAt: new Date().toISOString()
                     });
@@ -614,7 +688,7 @@ async function pageFunction(context) {
                             tiktok: ''
                         },
                         university: getUniversityName(context.request.url),
-                        department: 'School of Music',
+                        department: getDepartmentName(context.request.url, $),
                         sourceUrl: context.request.url,
                         scrapedAt: new Date().toISOString()
                     });
@@ -743,7 +817,7 @@ async function pageFunction(context) {
                                     tiktok: ''
                                 },
                                 university: getUniversityName(context.request.url),
-                                department: 'School of Music',
+                                department: getDepartmentName(context.request.url, $),
                                 sourceUrl: context.request.url,
                                 scrapedAt: new Date().toISOString()
                             });
