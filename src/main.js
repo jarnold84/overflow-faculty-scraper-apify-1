@@ -875,24 +875,48 @@ $('a').each(function() {
 });
         log.info('enqueueing new URLs');
         await enqueueLinks({
-            // Only follow links that are clearly faculty-related
+            // Only follow links that are clearly faculty-related AND numbered pagination
             selector: 'a[href*="/faculty/"]',
-            // Exclude alphabet pagination and other non-essential links
             exclude: [
-             /\/faculty\/[a-z]\.php$/,  // Alphabet pagination (a.php, b.php, etc.)
-             /\/students\//,            // Student pages
-             /\/community\//,           // Community pages
-             /\/about\//,               // About pages
-             /\/mckay-music-library\//, // Library pages
-              /\/ensembles\//,           // Ensemble pages
-             /\/forms\//,               // Forms
-              /\/gala\//,                // Events
-             /next-steps/,              // Navigation
-             /admissions/,              // Admissions
-             /programs-degrees/         // Programs
-    ]
-});
-        
+                /\/faculty\/[a-z]\.php$/,     // Alphabet pagination (a.php, b.php, etc.)
+                /\/faculty\/[A-Z]\.php$/,     // Uppercase alphabet pagination
+                /\/faculty\/.*\.php$/,        // Individual faculty profile pages
+                /\/students\//,               // Student pages  
+                /\/community\//,              // Community pages
+                /\/about\//,                  // About pages
+                /\/mckay-music-library\//,    // Library pages
+                /\/ensembles\//,              // Ensemble pages
+                /\/forms\//,                  // Forms
+                /\/gala\//,                   // Events
+                /next-steps/,                 // Navigation
+                /admissions/,                 // Admissions
+                /programs-degrees/,           // Programs
+                /open-positions/,             // Job listings
+                /emeritus/,                   // Emeritus faculty
+                /past_faculty/                // Past faculty
+            ],
+            // Only include pages with numbered pagination patterns
+            transformRequestFunction: (request) => {
+                const url = request.url.toLowerCase();
+                
+                // Allow main directory pages
+                if (url.endsWith('/faculty/') || url.includes('faculty/index')) {
+                    return request;
+                }
+                
+                // Allow numbered pagination (page=2, p=2, page2, etc.)
+                if (url.match(/page[=_-]?\d+|p[=_-]?\d+|\d+\.php$|\/\d+\/?$/)) {
+                    return request;
+                }
+                
+                // Allow "next" pagination
+                if (url.includes('next') && !url.includes('next-steps')) {
+                    return request;
+                }
+                
+                // Block everything else
+                return false;
+    }
 });
 
         // Extract title from the page.
