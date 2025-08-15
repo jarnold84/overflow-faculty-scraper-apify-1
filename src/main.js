@@ -890,7 +890,7 @@ $('a').each(function() {
              /next-steps/,              // Navigation
              /admissions/,              // Admissions
              /programs-degrees/         // Programs
-    }
+    ]
 });
         
 });
