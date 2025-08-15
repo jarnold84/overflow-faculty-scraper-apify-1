@@ -19,120 +19,6 @@ const crawler = new CheerioCrawler({
     maxRequestsPerCrawl,
     async requestHandler({ enqueueLinks, request, $, log }) {
         log.info(`Scraping: ${request.loadedUrl}`);
-        // DIAGNOSTIC TEST - Add this BEFORE your existing methods to see the HTML structure
-        // This will help us understand the exact layout
-
-        log.info('=== ILLINOIS DIAGNOSTIC TEST ===');
-
-        // Test 1: Look for faculty card containers
-        const possibleContainers = [
-            '.faculty-card', '.faculty-member', '.person-card', '.profile-card',
-            '.faculty-profile', '.directory-entry', '.people-card', '.staff-card',
-            '[class*="faculty"]', '[class*="person"]', '[class*="profile"]'
-        ];
-
-        possibleContainers.forEach(selector => {
-            const found = $(selector);
-            if (found.length > 0) {
-                log.info(`Found ${found.length} elements with selector: ${selector}`);
-                
-                // Log the first few elements
-                found.slice(0, 3).each(function(index) {
-                    log.info(`Sample ${selector} #${index}:`, $(this).html().substring(0, 200));
-                });
-            }
-        });
-
-        // Test 2: Look for elements containing email patterns
-        log.info('\n=== ELEMENTS WITH EMAIL PATTERNS ===');
-        $('*').each(function() {
-            const text = $(this).text();
-            if (text.includes('@illinois.edu') && text.length < 200) {
-                const tagName = this.tagName.toLowerCase();
-                const className = $(this).attr('class') || '';
-                const parent = $(this).parent()[0]?.tagName?.toLowerCase() || '';
-                
-                log.info(`Email found in <${tagName}> (class: ${className}, parent: ${parent}):`, text.trim());
-                log.info(`HTML:`, $(this).html().substring(0, 150));
-                log.info('---');
-            }
-        });
-
-        // Test 3: Look for faculty names (proper names with links)
-        log.info('\n=== FACULTY NAME LINKS ===');
-        $('a').each(function() {
-            const linkText = $(this).text().trim();
-            const href = $(this).attr('href');
-            
-            // Check if this looks like a faculty name link
-            if (href && href.includes('/people/profiles/') && linkText.length > 5 && linkText.length < 50) {
-                const parent = $(this).parent();
-                const parentClass = parent.attr('class') || '';
-                const container = parent.parent();
-                const containerClass = container.attr('class') || '';
-                
-                log.info(`Faculty link: "${linkText}" -> ${href}`);
-                log.info(`Parent: <${parent[0]?.tagName?.toLowerCase()}> class="${parentClass}"`);
-                log.info(`Container: <${container[0]?.tagName?.toLowerCase()}> class="${containerClass}"`);
-                log.info(`Full container text:`, container.text().substring(0, 200));
-                log.info('---');
-                
-                // Only log first 5 to avoid spam
-                if ($('a[href*="/people/profiles/"]').index(this) >= 4) {
-                    return false;
-                }
-            }
-        });
-
-        // Test 4: Find the faculty grid/container structure
-        log.info('\n=== FACULTY GRID STRUCTURE ===');
-        const gridSelectors = ['.grid', '.row', '.columns', '.faculty-grid', '.directory-grid', '.people-grid', '[class*="grid"]', '[class*="row"]'];
-
-        gridSelectors.forEach(selector => {
-            const found = $(selector);
-            if (found.length > 0) {
-                log.info(`Found ${found.length} ${selector} elements`);
-                found.each(function() {
-                    const profileLinks = $(this).find('a[href*="/people/profiles/"]').length;
-                    const emails = $(this).text().match(/@illinois\.edu/g)?.length || 0;
-                    
-                    if (profileLinks > 0 || emails > 0) {
-                        log.info(`  ${selector} contains ${profileLinks} profile links and ${emails} emails`);
-                        log.info(`  Classes: ${$(this).attr('class') || 'none'}`);
-                        log.info(`  First 150 chars:`, $(this).text().substring(0, 150));
-                    }
-                });
-            }
-        });
-
-        // Test 5: Check for specific Illinois patterns based on your screenshot
-        log.info('\n=== LOOKING FOR ILLINOIS-SPECIFIC PATTERNS ===');
-
-        // Check for common faculty directory patterns
-        const patterns = [
-            'div[class*="view"]',  // Drupal views
-            'div[class*="person"]',
-            'div[class*="faculty"]',
-            '.field-content',
-            '.views-row',
-            '.node-person'
-        ];
-
-        patterns.forEach(selector => {
-            const found = $(selector);
-            if (found.length > 0) {
-                found.each(function() {
-                    const text = $(this).text();
-                    if (text.includes('@illinois.edu')) {
-                        log.info(`${selector} with email:`, text.substring(0, 200));
-                        log.info(`HTML structure:`, $(this).html().substring(0, 200));
-                        log.info('---');
-                    }
-                });
-            }
-        });
-
-        log.info('=== END DIAGNOSTIC TEST ===\n');
 
 // Helper function to get base URL for relative links
 function getBaseUrl(url) {
@@ -484,13 +370,6 @@ $('.views-row').each(function() {
         return;
     }
     
-    // Skip obvious non-faculty entries
-    if (name.includes('String Quartet') || 
-        name.includes('Affiliated faculty') || 
-        name.toLowerCase().includes('ensemble')) {
-        return; // Skip this entry
-    }
-    
     // Use universal profile link finder
     const profileLink = findProfileLink(name, allProfileLinks);
     
@@ -501,11 +380,6 @@ $('.views-row').each(function() {
             titles.push(titleText);
         }
     });
-    
-    // Check titles for ensemble/group patterns
-    if (titles.some(title => title.includes('Group') || title.includes('Quartet'))) {
-        return; // Skip this entry
-    }
     
     const uniqueId = `${name}-${profileLink}`;
     if (!seenFaculty.has(uniqueId)) {
@@ -530,12 +404,13 @@ $('.views-row').each(function() {
             university: getUniversityName(request.loadedUrl),
             department: getDepartmentName(request.loadedUrl, $),
             sourceUrl: request.loadedUrl,
+            scrapedAt: new Date().toISOString()
         });
     }
 });
 
 // Enhanced Method 2 for Illinois - Add this BEFORE your Method 2 section
-async function extractMethod2Illinois($, { request, log }) {
+async function extractMethod2Illinois($, context) {
     console.log('🔍 Starting enhanced Illinois Method 2 debugging...');
     
     // Step 1: Enhanced card detection using diagnostic insights
@@ -702,135 +577,100 @@ async function extractMethod2Illinois($, { request, log }) {
     return results;
 }
 
-// Method 2: Detect Illinois card layout vs line-based layout
+// Method 2: Illinois-style - improved with universal profile link extraction
 if (facultyData.length === 0) {
-    // Check if this looks like Illinois card-based layout
-    const hasPersonCards = $('div[class*="person"]').length > 5;
-    const hasProfileLinks = $('a[href*="/people/profiles/"]').length > 5;
+    const pageText = $('body').text();
+    const lines = pageText.split('\n').map(line => line.trim()).filter(line => line && line.length > 1);
     
-    if (hasPersonCards && hasProfileLinks) {
-        log.info('Detected Illinois card-based layout, using ENHANCED card extraction method');
+    for (let i = 0; i < lines.length - 1; i++) {
+        const currentLine = lines[i];
         
-        // REPLACE OLD METHOD 2a WITH NEW ENHANCED VERSION
-        const illinoisResults = await extractMethod2Illinois($, { request, log });
-        
-        // Add results to facultyData
-        illinoisResults.forEach(faculty => {
-            const uniqueId = `${faculty.name}-${faculty.email}-${faculty.profileLink}`;
-            if (!seenFaculty.has(uniqueId)) {
-                seenFaculty.add(uniqueId);
-                facultyData.push(faculty);
-            }
-        });
-        
-    } else {
-        log.info('Using line-by-line text parsing method for non-card layout');
-        
-        // Method 2b: Keep your existing line-by-line code for other universities
-        const pageText = $('body').text();
-        const lines = pageText.split('\n').map(line => line.trim()).filter(line => line && line.length > 1);
-        
-        for (let i = 0; i < lines.length - 1; i++) {
-            const currentLine = lines[i];
+        // Better filtering to avoid junk entries
+        if (currentLine && 
+            !currentLine.includes('@') &&
+            currentLine !== 'Faculty' &&
+            currentLine !== 'Faculty Directory' &&
+            currentLine !== 'Search faculty by name, title, or position' &&
+            currentLine !== 'Clear input field' &&
+            currentLine.length > 2 && 
+            currentLine.length < 50 &&
+            !currentLine.includes('217-') &&
+            !currentLine.includes('music@illinois') &&
+            !currentLine.includes('Previous') &&
+            !currentLine.includes('Next') &&
+            !currentLine.includes('Cookie') &&
+            !currentLine.includes('Settings')) {
             
-            // Enhanced filtering to avoid junk entries
-            if (currentLine && 
-                !currentLine.includes('@') &&
-                currentLine !== 'Faculty' &&
-                currentLine !== 'Faculty Directory' &&
-                currentLine !== 'Search faculty by name, title, or position' &&
-                currentLine !== 'Clear input field' &&
-                currentLine !== 'Featured Alumni' &&
-                currentLine !== 'People' &&
-                currentLine.length > 2 && 
-                currentLine.length < 50 &&
-                !currentLine.includes('217-') &&
-                !currentLine.includes('music@illinois') &&
-                !currentLine.includes('Previous') &&
-                !currentLine.includes('Next') &&
-                !currentLine.includes('Cookie') &&
-                !currentLine.includes('Settings') &&
-                !currentLine.includes('String Quartet') &&
-                !currentLine.includes('Affiliated faculty') &&
-                !currentLine.toLowerCase().includes('ensemble') &&
-                !currentLine.toLowerCase().includes('alumni')) {
+            // Look ahead to find the email and collect titles in between
+            let foundEmail = '';
+            let titles = [];
+            
+            for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
+                const nextLine = lines[j];
                 
+                if (nextLine.includes('@') && nextLine.includes('.edu')) {
+                    foundEmail = nextLine;
+                    break;
+                } else if (nextLine === 'Faculty') {
+                    // Stop if we hit "Faculty" without finding email
+                    break;
+                } else if (nextLine && 
+                          nextLine.length > 5 && 
+                          !nextLine.includes('Faculty Directory') &&
+                          !nextLine.includes('Search faculty')) {
+                    // This line between name and email is likely a title
+                    titles.push(nextLine);
+                }
+            }
+            
+            // If we found a valid email, this is a faculty member
+            // Exclude generic department emails but allow all individual faculty emails
+            if (foundEmail && 
+                !foundEmail.includes('music@') && 
+                !foundEmail.includes('info@') && 
+                !foundEmail.includes('admin@') && 
+                !foundEmail.includes('contact@')) {
                 const name = currentLine;
+                const email = foundEmail;
                 
-                // Look ahead for email and titles
-                let titles = [];
-                let searchText = '';
+                // Use universal profile link finder
+                const profileLink = findProfileLink(name, allProfileLinks);
                 
-                for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
-                    const nextLine = lines[j];
-                    searchText += ' ' + nextLine;
-                    
-                    if (nextLine.includes('@') && nextLine.includes('.edu')) {
-                        break;
-                    } else if (nextLine === 'Faculty') {
-                        break;
-                    } else if (nextLine && 
-                              nextLine.length > 5 && 
-                              !nextLine.includes('Faculty Directory') &&
-                              !nextLine.includes('Search faculty')) {
-                        titles.push(nextLine);
-                    }
+                const emailConfidence = calculateEmailConfidence(name, email);
+                const emailSource = emailConfidence > 0.7 ? 'name-matched' : (emailConfidence > 0.3 ? 'section-matched' : 'none');
+                
+                // Only include if email confidence is reasonable
+                const finalEmail = emailConfidence > 0.3 ? email : '';
+                
+                const uniqueId = `${name}-${finalEmail}`;
+                if (!seenFaculty.has(uniqueId)) {
+                    seenFaculty.add(uniqueId);
+                    facultyData.push({
+                        name: name,
+                        titles: titles,
+                        profileLink: profileLink,
+                        email: finalEmail,
+                        emailConfidence: emailConfidence,
+                        emailSource: finalEmail ? emailSource : 'none',
+                        phone: '',
+                        bio: '',
+                        socials: {
+                            youtube: '',
+                            facebook: '',
+                            instagram: '',
+                            reddit: '',
+                            linkedin: '',
+                            tiktok: ''
+                        },
+                        university: getUniversityName(request.loadedUrl),
+                        department: getDepartmentName(request.loadedUrl, $),
+                        sourceUrl: request.loadedUrl,
+                        scrapedAt: new Date().toISOString()
+                    });
                 }
                 
-                // Extract email using enhanced method
-                const emailMatches = searchText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
-                let bestEmail = '';
-                let bestConfidence = 0;
-                
-                if (emailMatches) {
-                    for (const potentialEmail of emailMatches) {
-                        if (!potentialEmail.includes('music@') && 
-                            !potentialEmail.includes('info@') && 
-                            !potentialEmail.includes('admin@') && 
-                            !potentialEmail.includes('contact@')) {
-                            
-                            const confidence = calculateEmailConfidence(name, potentialEmail);
-                            if (confidence > bestConfidence) {
-                                bestEmail = potentialEmail;
-                                bestConfidence = confidence;
-                            }
-                        }
-                    }
-                }
-                
-                if (bestEmail && bestConfidence > 0.3) {
-                    const profileLink = findProfileLink(name, allProfileLinks);
-                    const emailSource = bestConfidence > 0.7 ? 'name-matched' : 'section-matched';
-                    
-                    const uniqueId = `${name}-${bestEmail}`;
-                    if (!seenFaculty.has(uniqueId)) {
-                        seenFaculty.add(uniqueId);
-                        facultyData.push({
-                            name: name,
-                            titles: titles.slice(0, 3),
-                            profileLink: profileLink,
-                            email: bestEmail,
-                            emailConfidence: bestConfidence,
-                            emailSource: emailSource,
-                            phone: '',
-                            bio: '',
-                            socials: {
-                                youtube: '',
-                                facebook: '',
-                                instagram: '',
-                                reddit: '',
-                                linkedin: '',
-                                tiktok: ''
-                            },
-                            university: getUniversityName(request.loadedUrl),
-                            department: getDepartmentName(request.loadedUrl, $),
-                            sourceUrl: request.loadedUrl,
-                            scrapedAt: new Date().toISOString()
-                        });
-                    }
-                    
-                    i = i + titles.length + 1;
-                }
+                // Skip ahead past this faculty entry
+                i = i + titles.length + 1;
             }
         }
     }
@@ -853,10 +693,7 @@ if (facultyData.length === 0) {
             !name.includes('Faculty Directory') && !name.includes('Resources') &&
             !name.includes('Open Positions') && !name.includes('Faculty by Area') &&
             !href.includes('index.php') && !href.includes('resources') &&
-            !href.includes('open-positions') && !href.includes('faculty-area') &&
-            !name.includes('String Quartet') &&
-            !name.includes('Affiliated faculty') &&
-            !name.toLowerCase().includes('ensemble')) {
+            !href.includes('open-positions') && !href.includes('faculty-area')) {
             
             // Use universal profile link finder (more reliable than local extraction)
             const profileLink = findProfileLink(name, allProfileLinks);
@@ -892,11 +729,6 @@ if (facultyData.length === 0) {
                 if (cleanTitle && cleanTitle.length > 3 && cleanTitle.length < 100) {
                     titles.push(cleanTitle);
                 }
-            }
-            
-            // Check titles for ensemble/group patterns
-            if (titles.some(title => title.includes('Group') || title.includes('Quartet'))) {
-                return; // Skip this entry
             }
             
             const uniqueId = `${name}-${profileLink}`;
@@ -946,10 +778,7 @@ if (true) {
         if (!name || name.length < 3 || name.length > 50 ||
             name.includes('Email') || name.includes('Phone') ||
             name.includes('Office') || name.includes('Room') ||
-            name.includes('Directory') || name.includes('Faculty') ||
-            name.includes('String Quartet') ||
-            name.includes('Affiliated faculty') ||
-            name.toLowerCase().includes('ensemble')) {
+            name.includes('Directory') || name.includes('Faculty')) {
             return;
         }
         
@@ -991,20 +820,12 @@ if (true) {
         if (!email || titles.length === 0) {
             const rowText = $(this).text();
             
-            // Enhanced email search using broader matching
-            const emailMatches = rowText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
-            if (emailMatches && !email) {
-                let bestConfidence = 0;
-                for (const potentialEmail of emailMatches) {
-                    const confidence = calculateEmailConfidence(name, potentialEmail);
-                    if (confidence > bestConfidence) {
-                        email = potentialEmail;
-                        bestConfidence = confidence;
-                    }
-                }
-                // Only use if confidence is reasonable
-                if (bestConfidence <= 0.3) {
-                    email = '';
+            // Extract email with confidence check
+            const emailMatch = rowText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
+            if (emailMatch && !email) {
+                const confidence = calculateEmailConfidence(name, emailMatch[0]);
+                if (confidence > 0.3) {
+                    email = emailMatch[0];
                 }
             }
             
@@ -1021,11 +842,6 @@ if (true) {
             if (cleanedText && cleanedText.length > 5 && cleanedText.length < 100) {
                 titles.push(cleanedText);
             }
-        }
-        
-        // Check titles for ensemble/group patterns
-        if (titles.some(title => title.includes('Group') || title.includes('Quartet'))) {
-            return; // Skip this entry
         }
         
         // Only add if we have a reasonable name (at least first + last)
@@ -1139,31 +955,17 @@ if (facultyData.length > 0) {
             if (nameMatch) {
                 const potentialName = nameMatch[1];
                 
-                // Verify this looks like a faculty name and skip ensembles
+                // Verify this looks like a faculty name
                 if (potentialName.split(' ').length >= 2 && potentialName.length < 50 &&
                     !potentialName.includes('Email') && !potentialName.includes('Phone') &&
-                    !potentialName.includes('Room') && !potentialName.includes('Office') &&
-                    !potentialName.includes('String Quartet') &&
-                    !potentialName.includes('Affiliated faculty') &&
-                    !potentialName.toLowerCase().includes('ensemble')) {
+                    !potentialName.includes('Room') && !potentialName.includes('Office')) {
                     
-                    // Enhanced email search using broader matching
-                    const emailMatches = rowText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
-                    let email = '';
-                    let bestConfidence = 0;
-                    
-                    if (emailMatches) {
-                        for (const potentialEmail of emailMatches) {
-                            const confidence = calculateEmailConfidence(potentialName, potentialEmail);
-                            if (confidence > bestConfidence) {
-                                email = potentialEmail;
-                                bestConfidence = confidence;
-                            }
-                        }
-                    }
+                    // Extract email from the same text
+                    const emailMatch = rowText.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
+                    const email = emailMatch ? emailMatch[1] : '';
                     
                     // Only use email if confidence is reasonable
-                    const emailConfidence = bestConfidence;
+                    const emailConfidence = calculateEmailConfidence(potentialName, email);
                     const finalEmail = emailConfidence > 0.3 ? email : '';
                     
                     // Extract phone from the same text
@@ -1211,36 +1013,7 @@ if (facultyData.length > 0) {
     }
 }
 
-// Final cleanup: Filter out any remaining invalid entries
-const cleanedFacultyData = facultyData.filter(faculty => {
-    return faculty.name && 
-           faculty.name !== 'undefined' &&
-           faculty.name !== 'null' &&
-           !faculty.name.toLowerCase().includes('jupiter') &&
-           !faculty.name.includes('String Quartet') &&
-           !faculty.name.includes('Affiliated faculty') &&
-           !faculty.name.toLowerCase().includes('ensemble') &&
-           faculty.name.split(' ').length >= 2; // Must have at least first and last name
-});
-
-// Replace facultyData with cleaned version
-facultyData.length = 0;
-facultyData.push(...cleanedFacultyData);
-
 log.info(`Found ${facultyData.length} unique faculty members`);
-
-// Email extraction statistics
-if (facultyData.length > 0) {
-    const emailStats = {
-        total: facultyData.length,
-        withEmail: facultyData.filter(f => f.email).length,
-        highConfidence: facultyData.filter(f => f.emailConfidence > 0.7).length,
-        mediumConfidence: facultyData.filter(f => f.emailConfidence > 0.3 && f.emailConfidence <= 0.7).length
-    };
-    
-    log.info(`Email extraction stats:`, emailStats);
-    log.info(`Email success rate: ${((emailStats.withEmail / emailStats.total) * 100).toFixed(1)}%`);
-}
 
 // Only save data if we found faculty members (avoid saving pagination pages)
 if (facultyData.length > 0) {
