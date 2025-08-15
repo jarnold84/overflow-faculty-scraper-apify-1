@@ -421,21 +421,25 @@ $('.views-row').each(function() {
     }
 });
 
-// Method 2: Illinois-style - improved with broader email search
+// Method 2: Illinois-style - COMPLETELY REWRITTEN for better email extraction
 if (facultyData.length === 0) {
+    log.info('Trying Illinois-style extraction method with enhanced email detection');
+    
     const pageText = $('body').text();
     const lines = pageText.split('\n').map(line => line.trim()).filter(line => line && line.length > 1);
     
     for (let i = 0; i < lines.length - 1; i++) {
         const currentLine = lines[i];
         
-        // Better filtering to avoid junk entries
+        // Enhanced filtering to avoid junk entries
         if (currentLine && 
             !currentLine.includes('@') &&
             currentLine !== 'Faculty' &&
             currentLine !== 'Faculty Directory' &&
             currentLine !== 'Search faculty by name, title, or position' &&
             currentLine !== 'Clear input field' &&
+            currentLine !== 'Featured Alumni' &&  // NEW: Block Featured Alumni
+            currentLine !== 'People' &&            // NEW: Block People
             currentLine.length > 2 && 
             currentLine.length < 50 &&
             !currentLine.includes('217-') &&
@@ -446,92 +450,166 @@ if (facultyData.length === 0) {
             !currentLine.includes('Settings') &&
             !currentLine.includes('String Quartet') &&
             !currentLine.includes('Affiliated faculty') &&
-            !currentLine.toLowerCase().includes('ensemble')) {
+            !currentLine.toLowerCase().includes('ensemble') &&
+            !currentLine.toLowerCase().includes('alumni')) {  // NEW: Block alumni
             
             const name = currentLine;
             
-            // Look ahead to find the email and collect titles in between
-            let foundEmail = '';
+            // Look ahead for email and titles with MUCH larger search window
             let titles = [];
-            let bestConfidence = 0;
-            
-            // Collect search text from a broader window
+            let allEmails = [];
             let searchText = '';
-            for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
+            
+            // Collect ALL text in a 15-line window for comprehensive search
+            for (let j = i + 1; j < Math.min(i + 15, lines.length); j++) {
                 const nextLine = lines[j];
                 searchText += ' ' + nextLine;
                 
-                if (nextLine === 'Faculty') {
-                    // Stop if we hit "Faculty" without finding email
-                    break;
-                } else if (nextLine && 
-                          nextLine.length > 5 && 
-                          !nextLine.includes('Faculty Directory') &&
-                          !nextLine.includes('Search faculty')) {
-                    // This line between name and email is likely a title
+                // Stop if we hit another faculty name or major section boundary
+                if (j > i + 1 && nextLine && nextLine.length > 10 && nextLine.length < 50 && 
+                    !nextLine.includes('@') && !nextLine.includes('217-') &&
+                    nextLine !== 'Faculty' && nextLine !== 'People' && 
+                    nextLine !== 'Featured Alumni' && nextLine !== 'Clear input field') {
+                    
+                    // Check if this might be another faculty name
+                    const words = nextLine.split(' ').filter(w => w.length > 1);
+                    if (words.length >= 2 && words.length <= 4 && 
+                        words.every(w => /^[A-Z][a-z]+/.test(w)) &&
+                        !nextLine.includes('Professor') && !nextLine.includes('Director') &&
+                        !nextLine.includes('Assistant') && !nextLine.includes('Associate')) {
+                        // This looks like another faculty name, stop here
+                        break;
+                    }
+                }
+                
+                // Collect potential titles (non-email lines)
+                if (nextLine && 
+                    !nextLine.includes('@') && 
+                    nextLine.length > 5 && 
+                    nextLine.length < 100 &&
+                    !nextLine.includes('Faculty Directory') &&
+                    !nextLine.includes('Search faculty') &&
+                    !nextLine.includes('Featured Alumni') &&
+                    !nextLine.includes('People') &&
+                    !nextLine.includes('Clear input field')) {
                     titles.push(nextLine);
                 }
             }
             
-            // Enhanced email search using broader matching
-            const emailMatches = searchText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g); // Note the 'g' flag
+            // Extract ALL emails from the search text using global regex
+            const emailMatches = searchText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
             if (emailMatches) {
-                // Try each email found and pick best confidence match
+                // Test each email for confidence and pick the best one
+                let bestEmail = '';
+                let bestConfidence = 0;
+                
                 for (const potentialEmail of emailMatches) {
-                    const confidence = calculateEmailConfidence(name, potentialEmail);
-                    if (confidence > bestConfidence) {
-                        foundEmail = potentialEmail;
-                        bestConfidence = confidence;
+                    // Skip generic/department emails
+                    if (!potentialEmail.includes('music@') && 
+                        !potentialEmail.includes('info@') && 
+                        !potentialEmail.includes('admin@') && 
+                        !potentialEmail.includes('contact@')) {
+                        
+                        const confidence = calculateEmailConfidence(name, potentialEmail);
+                        if (confidence > bestConfidence) {
+                            bestEmail = potentialEmail;
+                            bestConfidence = confidence;
+                        }
                     }
                 }
-            }
-            
-            // If we found a valid email, this is a faculty member
-            // Exclude generic department emails but allow all individual faculty emails
-            if (foundEmail && 
-                !foundEmail.includes('music@') && 
-                !foundEmail.includes('info@') && 
-                !foundEmail.includes('admin@') && 
-                !foundEmail.includes('contact@')) {
                 
-                // Use universal profile link finder
-                const profileLink = findProfileLink(name, allProfileLinks);
-                
-                const emailConfidence = bestConfidence;
-                const emailSource = emailConfidence > 0.7 ? 'name-matched' : (emailConfidence > 0.3 ? 'section-matched' : 'none');
-                
-                // Only include if email confidence is reasonable
-                const finalEmail = emailConfidence > 0.3 ? foundEmail : '';
-                
-                const uniqueId = `${name}-${finalEmail}`;
-                if (!seenFaculty.has(uniqueId)) {
-                    seenFaculty.add(uniqueId);
-                    facultyData.push({
-                        name: name,
-                        titles: titles,
-                        profileLink: profileLink,
-                        email: finalEmail,
-                        emailConfidence: emailConfidence,
-                        emailSource: finalEmail ? emailSource : 'none',
-                        phone: '',
-                        bio: '',
-                        socials: {
-                            youtube: '',
-                            facebook: '',
-                            instagram: '',
-                            reddit: '',
-                            linkedin: '',
-                            tiktok: ''
-                        },
-                        university: getUniversityName(request.loadedUrl),
-                        department: getDepartmentName(request.loadedUrl, $),
-                        sourceUrl: request.loadedUrl,
-                        scrapedAt: new Date().toISOString()
-                    });
+                // If we found a good email match, add this faculty member
+                if (bestEmail && bestConfidence > 0.3) {
+                    // Use universal profile link finder
+                    const profileLink = findProfileLink(name, allProfileLinks);
+                    
+                    const emailSource = bestConfidence > 0.7 ? 'name-matched' : 'section-matched';
+                    
+                    // Clean up titles - remove the email from titles array
+                    const cleanedTitles = titles.filter(title => 
+                        !title.includes(bestEmail) && 
+                        title.length > 3 && 
+                        title.length < 100
+                    ).slice(0, 3); // Limit to first 3 titles
+                    
+                    const uniqueId = `${name}-${bestEmail}`;
+                    if (!seenFaculty.has(uniqueId)) {
+                        seenFaculty.add(uniqueId);
+                        facultyData.push({
+                            name: name,
+                            titles: cleanedTitles,
+                            profileLink: profileLink,
+                            email: bestEmail,
+                            emailConfidence: bestConfidence,
+                            emailSource: emailSource,
+                            phone: '',
+                            bio: '',
+                            socials: {
+                                youtube: '',
+                                facebook: '',
+                                instagram: '',
+                                reddit: '',
+                                linkedin: '',
+                                tiktok: ''
+                            },
+                            university: getUniversityName(request.loadedUrl),
+                            department: getDepartmentName(request.loadedUrl, $),
+                            sourceUrl: request.loadedUrl,
+                            scrapedAt: new Date().toISOString()
+                        });
+                    }
+                    
+                    // Skip ahead past this faculty entry
+                    i = Math.min(i + titles.length + 3, lines.length - 1);
                 }
-                
-                // Skip ahead past this faculty entry
-                i = i + titles.length + 1;
+                // FALLBACK: If email confidence is low but we have academic titles, still include
+                else if (titles.some(title => 
+                    title.toLowerCase().includes('professor') ||
+                    title.toLowerCase().includes('instructor') ||
+                    title.toLowerCase().includes('lecturer') ||
+                    title.toLowerCase().includes('director') ||
+                    title.toLowerCase().includes('chair'))) {
+                    
+                    // Use universal profile link finder
+                    const profileLink = findProfileLink(name, allProfileLinks);
+                    
+                    // Clean up titles
+                    const cleanedTitles = titles.filter(title => 
+                        title.length > 3 && 
+                        title.length < 100 &&
+                        !title.includes('@')
+                    ).slice(0, 3);
+                    
+                    const uniqueId = `${name}-academic-title`;
+                    if (!seenFaculty.has(uniqueId)) {
+                        seenFaculty.add(uniqueId);
+                        facultyData.push({
+                            name: name,
+                            titles: cleanedTitles,
+                            profileLink: profileLink,
+                            email: '', // No email but valid faculty
+                            emailConfidence: 0,
+                            emailSource: 'none',
+                            phone: '',
+                            bio: '',
+                            socials: {
+                                youtube: '',
+                                facebook: '',
+                                instagram: '',
+                                reddit: '',
+                                linkedin: '',
+                                tiktok: ''
+                            },
+                            university: getUniversityName(request.loadedUrl),
+                            department: getDepartmentName(request.loadedUrl, $),
+                            sourceUrl: request.loadedUrl,
+                            scrapedAt: new Date().toISOString()
+                        });
+                    }
+                    
+                    // Skip ahead past this faculty entry
+                    i = Math.min(i + titles.length + 2, lines.length - 1);
+                }
             }
         }
     }
