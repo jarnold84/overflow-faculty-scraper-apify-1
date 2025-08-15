@@ -130,6 +130,29 @@ function findProfileLink(name, allProfileLinks) {
     return '';
 }
 
+// Helper function to find email specifically for this faculty member
+function findFacultyEmail(name, $facultySection) {
+    let bestEmail = '';
+    let highestConfidence = 0;
+    
+    // Look for emails within this faculty member's specific section
+    $facultySection.find('a[href^="mailto:"]').each(function() {
+        const emailHref = $(this).attr('href');
+        if (emailHref) {
+            const cleanEmail = emailHref.replace('mailto:', '').split('?')[0].trim();
+            const confidence = calculateEmailConfidence(name, cleanEmail);
+            
+            // Only use emails with reasonable confidence (>0.3)
+            if (confidence > highestConfidence && confidence > 0.3) {
+                bestEmail = cleanEmail;
+                highestConfidence = confidence;
+            }
+        }
+    });
+    
+    return { email: bestEmail, confidence: highestConfidence };
+}
+
 // Helper function to calculate email confidence score
 function calculateEmailConfidence(name, email) {
     if (!email || !name) return 0;
@@ -446,18 +469,21 @@ if (facultyData.length === 0) {
                 const profileLink = findProfileLink(name, allProfileLinks);
                 
                 const emailConfidence = calculateEmailConfidence(name, email);
-                const emailSource = emailConfidence > 0.7 ? 'name-matched' : 'proximity-fallback';
+                const emailSource = emailConfidence > 0.7 ? 'name-matched' : (emailConfidence > 0.3 ? 'section-matched' : 'none');
                 
-                const uniqueId = `${name}-${email}`;
+                // Only include if email confidence is reasonable
+                const finalEmail = emailConfidence > 0.3 ? email : '';
+                
+                const uniqueId = `${name}-${finalEmail}`;
                 if (!seenFaculty.has(uniqueId)) {
                     seenFaculty.add(uniqueId);
                     facultyData.push({
                         name: name,
                         titles: titles,
                         profileLink: profileLink,
-                        email: email,
+                        email: finalEmail,
                         emailConfidence: emailConfidence,
-                        emailSource: emailSource,
+                        emailSource: finalEmail ? emailSource : 'none',
                         phone: '',
                         bio: '',
                         socials: {
@@ -482,7 +508,7 @@ if (facultyData.length === 0) {
     }
 }
 
-// Method 3: Utah-style (table/markdown layout with links)
+// Method 3: Utah-style (table/markdown layout with links) - IMPROVED EMAIL MATCHING
 if (facultyData.length === 0) {
     log.info('Trying Utah-style extraction method');
     
@@ -504,46 +530,14 @@ if (facultyData.length === 0) {
             // Use universal profile link finder (more reliable than local extraction)
             const profileLink = findProfileLink(name, allProfileLinks);
             
-            // Look for email links near this faculty member
-            let email = '';
-            
             // Find the faculty member's section/container
             const $facultySection = $(this).closest('p, div, tr').parent();
             
-            // Look for mailto links in the same section or nearby
-            $facultySection.find('a[href^="mailto:"]').each(function() {
-                const emailHref = $(this).attr('href');
-                if (emailHref) {
-                    // Clean the email: remove mailto: and any query parameters
-                    let cleanEmail = emailHref.replace('mailto:', '').split('?')[0].trim();
-                    
-                    // Check if email matches the faculty member's name
-                    const firstName = name.split(' ')[0].toLowerCase();
-                    const lastName = name.split(' ').length > 1 ? name.split(' ')[name.split(' ').length - 1].toLowerCase() : '';
-                    
-                    if (cleanEmail.toLowerCase().includes(firstName) || 
-                        (lastName && cleanEmail.toLowerCase().includes(lastName))) {
-                        // Email contains faculty member's name - likely theirs
-                        email = cleanEmail;
-                    } else if (!email) {
-                        // Fallback: use any email in their section if no better match found
-                        email = cleanEmail;
-                    }
-                }
-            });
-            
-            // If no email found in section, look more broadly around the faculty link
-            if (!email) {
-                const $context = $(this).parent().parent();
-                $context.find('a[href^="mailto:"]').first().each(function() {
-                    const emailHref = $(this).attr('href');
-                    if (emailHref) {
-                        // Clean the email: remove mailto: and any query parameters
-                        let cleanEmail = emailHref.replace('mailto:', '').split('?')[0].trim();
-                        email = cleanEmail;
-                    }
-                });
-            }
+            // Use the new findFacultyEmail function
+            const emailResult = findFacultyEmail(name, $facultySection);
+            const email = emailResult.confidence > 0.3 ? emailResult.email : '';
+            const emailConfidence = emailResult.confidence;
+            const emailSource = email ? (emailConfidence > 0.7 ? 'name-matched' : 'section-matched') : 'none';
             
             // Look for title information near this faculty link
             const $parentRow = $(this).closest('tr, p, div');
@@ -568,9 +562,6 @@ if (facultyData.length === 0) {
                     titles.push(cleanTitle);
                 }
             }
-            
-            const emailConfidence = calculateEmailConfidence(name, email);
-            const emailSource = email ? (emailConfidence > 0.7 ? 'name-matched' : 'proximity-fallback') : 'none';
             
             const uniqueId = `${name}-${profileLink}`;
             if (!seenFaculty.has(uniqueId)) {
@@ -602,7 +593,7 @@ if (facultyData.length === 0) {
     });
 }
 
-// Method 4: Tabular faculty directory (UNF style) - ALWAYS RUNS NOW
+// Method 4: Tabular faculty directory (UNF style) - IMPROVED EMAIL MATCHING
 if (true) {
     log.info('Trying tabular extraction method (UNF style)');
     
@@ -632,13 +623,16 @@ if (true) {
         let phone = '';
         let titles = [];
         
-        // Method A: Look in table cells
+        // Method A: Look in table cells with better email matching
         cells.each(function() {
             const cellText = $(this).text().trim();
             
-            // Check for email pattern
+            // Check for email pattern with confidence scoring
             if (cellText.includes('@') && cellText.includes('.edu')) {
-                email = cellText;
+                const confidence = calculateEmailConfidence(name, cellText);
+                if (confidence > 0.3 && (!email || confidence > calculateEmailConfidence(name, email))) {
+                    email = cellText;
+                }
             }
             
             // Check for phone pattern
@@ -658,10 +652,13 @@ if (true) {
         if (!email || titles.length === 0) {
             const rowText = $(this).text();
             
-            // Extract email
+            // Extract email with confidence check
             const emailMatch = rowText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
             if (emailMatch && !email) {
-                email = emailMatch[0];
+                const confidence = calculateEmailConfidence(name, emailMatch[0]);
+                if (confidence > 0.3) {
+                    email = emailMatch[0];
+                }
             }
             
             // Extract phone
@@ -682,7 +679,7 @@ if (true) {
         // Only add if we have a reasonable name (at least first + last)
         if (name.split(' ').length >= 2) {
             const emailConfidence = calculateEmailConfidence(name, email);
-            const emailSource = email ? (emailConfidence > 0.7 ? 'name-matched' : 'proximity-fallback') : 'none';
+            const emailSource = email ? (emailConfidence > 0.7 ? 'name-matched' : 'section-matched') : 'none';
             
             const uniqueId = `${name}-${email}-${profileLink}`;
             if (!seenTabular.has(uniqueId)) {
@@ -799,28 +796,31 @@ if (facultyData.length > 0) {
                     const emailMatch = rowText.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
                     const email = emailMatch ? emailMatch[1] : '';
                     
+                    // Only use email if confidence is reasonable
+                    const emailConfidence = calculateEmailConfidence(potentialName, email);
+                    const finalEmail = emailConfidence > 0.3 ? email : '';
+                    
                     // Extract phone from the same text
                     const phoneMatch = rowText.match(/(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/);
                     const phone = phoneMatch ? phoneMatch[1] : '';
                     
                     // Extract title (everything after name, before email/phone)
-                    let title = rowText.replace(potentialName, '').replace(email, '').replace(phone, '');
+                    let title = rowText.replace(potentialName, '').replace(finalEmail, '').replace(phone, '');
                     title = title.replace(/\s+/g, ' ').trim();
                     
                     // Use universal profile link finder
                     const profileLink = findProfileLink(potentialName, allProfileLinks);
                     
-                    const emailConfidence = calculateEmailConfidence(potentialName, email);
-                    const emailSource = email ? (emailConfidence > 0.7 ? 'name-matched' : 'proximity-fallback') : 'none';
+                    const emailSource = finalEmail ? (emailConfidence > 0.7 ? 'name-matched' : 'section-matched') : 'none';
                     
-                    const uniqueId = `${potentialName}-${email}`;
+                    const uniqueId = `${potentialName}-${finalEmail}`;
                     if (!seenFaculty.has(uniqueId)) {
                         seenFaculty.add(uniqueId);
                         facultyData.push({
                             name: potentialName,
                             titles: title ? [title] : [],
                             profileLink: profileLink,
-                            email: email,
+                            email: finalEmail,
                             emailConfidence: emailConfidence,
                             emailSource: emailSource,
                             phone: phone,
@@ -916,8 +916,8 @@ $('a').each(function() {
                 
                 // Block everything else
                 return false;
-    }
-});
+            }
+        });
 
         // Extract title from the page.
         const title = $('title').text();
