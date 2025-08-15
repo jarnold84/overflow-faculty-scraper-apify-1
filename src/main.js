@@ -530,13 +530,12 @@ $('.views-row').each(function() {
             university: getUniversityName(request.loadedUrl),
             department: getDepartmentName(request.loadedUrl, $),
             sourceUrl: request.loadedUrl,
-            scrapedAt: new Date().toISOString()
         });
     }
 });
 
 // Enhanced Method 2 for Illinois - Add this BEFORE your Method 2 section
-async function extractMethod2Illinois($, context) {
+async function extractMethod2Illinois($, { request, log }) {
     console.log('🔍 Starting enhanced Illinois Method 2 debugging...');
     
     // Step 1: Enhanced card detection using diagnostic insights
@@ -713,7 +712,7 @@ if (facultyData.length === 0) {
         log.info('Detected Illinois card-based layout, using ENHANCED card extraction method');
         
         // REPLACE OLD METHOD 2a WITH NEW ENHANCED VERSION
-        const illinoisResults = await extractMethod2Illinois($, context);
+        const illinoisResults = await extractMethod2Illinois($, { request, log });
         
         // Add results to facultyData
         illinoisResults.forEach(faculty => {
