@@ -535,6 +535,174 @@ $('.views-row').each(function() {
     }
 });
 
+// Enhanced Method 2 for Illinois - Add this BEFORE your Method 2 section
+async function extractMethod2Illinois($, context) {
+    console.log('🔍 Starting enhanced Illinois Method 2 debugging...');
+    
+    // Step 1: Enhanced card detection using diagnostic insights
+    const facultyCards = $('div[class*="person"]');
+    console.log(`✅ Found ${facultyCards.length} cards using person selector`);
+    
+    if (facultyCards.length === 0) {
+        console.log('❌ No faculty cards found');
+        return [];
+    }
+    
+    console.log(`🎯 Processing ${facultyCards.length} cards`);
+    
+    const results = [];
+    
+    // Step 2: Process each card based on diagnostic findings
+    facultyCards.each(function(i) {
+        console.log(`\n--- Processing Card ${i + 1}/${facultyCards.length} ---`);
+        
+        const $card = $(this);
+        const cardText = $card.text();
+        
+        // Step 3: Extract name from profile link (most reliable based on diagnostic)
+        const $nameLink = $card.find('a[href*="/people/profiles/"]').first();
+        const name = $nameLink.text().trim();
+        
+        // Skip if no valid name
+        if (!name || name.length < 3 || name.length > 50) {
+            console.log(`⚠️  Card ${i + 1}: Skipping - invalid name "${name}"`);
+            return true; // continue to next iteration
+        }
+        
+        console.log(`👤 Card ${i + 1}: Name = "${name}"`);
+        
+        // Step 4: Extract email using diagnostic-found structure
+        let email = '';
+        let emailConfidence = 0;
+        let emailSource = 'none';
+        
+        // Strategy A: mailto links (most reliable from diagnostic)
+        const $mailtoLink = $card.find('a[href^="mailto:"]').first();
+        if ($mailtoLink.length > 0) {
+            email = $mailtoLink.attr('href').replace('mailto:', '').trim();
+            emailConfidence = calculateEmailConfidence(name, email);
+            emailSource = 'mailto-link';
+            console.log(`📧 Card ${i + 1}: Found mailto = "${email}" (confidence: ${emailConfidence})`);
+        }
+        
+        // Strategy B: Email in contact sections (.profile-card__contact-email classes)
+        if (!email) {
+            const $emailElements = $card.find('.profile-card__contact-email, .profile-card__contact-email-link');
+            if ($emailElements.length > 0) {
+                const emailText = $emailElements.first().text().trim();
+                if (emailText.includes('@')) {
+                    email = emailText;
+                    emailConfidence = calculateEmailConfidence(name, email);
+                    emailSource = 'contact-element';
+                    console.log(`📧 Card ${i + 1}: Found contact element = "${email}" (confidence: ${emailConfidence})`);
+                }
+            }
+        }
+        
+        // Strategy C: Email patterns in card text (fallback)
+        if (!email) {
+            const emailMatches = cardText.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g);
+            if (emailMatches && emailMatches.length > 0) {
+                for (const potentialEmail of emailMatches) {
+                    const confidence = calculateEmailConfidence(name, potentialEmail);
+                    if (confidence > emailConfidence) {
+                        email = potentialEmail;
+                        emailConfidence = confidence;
+                        emailSource = 'text-pattern';
+                    }
+                }
+                console.log(`📧 Card ${i + 1}: Found text pattern = "${email}" (confidence: ${emailConfidence})`);
+            }
+        }
+        
+        // Step 5: Extract profile link
+        const profileHref = $nameLink.attr('href');
+        const baseUrl = 'https://music.illinois.edu';
+        const profileLink = profileHref ? (profileHref.startsWith('http') ? profileHref : `${baseUrl}${profileHref}`) : '';
+        console.log(`🔗 Card ${i + 1}: Profile = "${profileLink}"`);
+        
+        // Step 6: Extract titles from card structure
+        const titles = [];
+        
+        // Look for title elements in card
+        $card.find('.profile-card__title, .person-title, [class*="title"]').each(function() {
+            const titleText = $(this).text().trim();
+            if (titleText && titleText !== name && titleText.length > 3 && titleText.length < 100 &&
+                !titleText.includes('@') && !titleText.includes('217-')) {
+                titles.push(titleText);
+            }
+        });
+        
+        // Extract additional titles from text if needed
+        if (titles.length === 0) {
+            const lines = cardText.split('\n').map(line => line.trim()).filter(line => line);
+            for (const line of lines) {
+                if (line && line !== name && line.length > 5 && line.length < 100 &&
+                    !line.includes('@') && !line.includes('217-') &&
+                    (line.toLowerCase().includes('professor') || 
+                     line.toLowerCase().includes('director') ||
+                     line.toLowerCase().includes('chair') ||
+                     line.toLowerCase().includes('instructor'))) {
+                    
+                    if (!titles.includes(line)) {
+                        titles.push(line);
+                    }
+                }
+            }
+        }
+        
+        console.log(`🎓 Card ${i + 1}: Titles = [${titles.join(', ')}]`);
+        
+        // Step 7: Extract phone
+        const phoneMatch = cardText.match(/\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
+        const phone = phoneMatch ? phoneMatch[0].trim() : '';
+        if (phone) console.log(`📞 Card ${i + 1}: Phone = "${phone}"`);
+        
+        // Step 8: Only include if email confidence is reasonable OR has academic titles
+        const hasAcademicTitle = titles.some(title => 
+            title.toLowerCase().includes('professor') ||
+            title.toLowerCase().includes('instructor') ||
+            title.toLowerCase().includes('lecturer') ||
+            title.toLowerCase().includes('director') ||
+            title.toLowerCase().includes('chair'));
+        
+        if (emailConfidence > 0.3 || hasAcademicTitle) {
+            const finalEmail = emailConfidence > 0.3 ? email : '';
+            const finalEmailSource = finalEmail ? emailSource : 'none';
+            
+            results.push({
+                name: name,
+                titles: titles.slice(0, 3), // Limit to first 3 titles
+                profileLink: profileLink,
+                email: finalEmail,
+                emailConfidence: emailConfidence,
+                emailSource: finalEmailSource,
+                phone: phone,
+                bio: '',
+                socials: {
+                    youtube: '',
+                    facebook: '',
+                    instagram: '',
+                    reddit: '',
+                    linkedin: '',
+                    tiktok: ''
+                },
+                university: getUniversityName(context.request.loadedUrl),
+                department: getDepartmentName(context.request.loadedUrl, $),
+                sourceUrl: context.request.loadedUrl,
+                scrapedAt: new Date().toISOString()
+            });
+            
+            console.log(`✅ Card ${i + 1}: Added to results`);
+        } else {
+            console.log(`⚠️  Card ${i + 1}: Skipped - low email confidence (${emailConfidence}) and no academic titles`);
+        }
+    });
+    
+    console.log(`\n✅ Method 2 Illinois completed: ${results.length} faculty members extracted`);
+    return results;
+}
+
 // Method 2: Detect Illinois card layout vs line-based layout
 if (facultyData.length === 0) {
     // Check if this looks like Illinois card-based layout
@@ -542,146 +710,17 @@ if (facultyData.length === 0) {
     const hasProfileLinks = $('a[href*="/people/profiles/"]').length > 5;
     
     if (hasPersonCards && hasProfileLinks) {
-        log.info('Detected Illinois card-based layout, using card extraction method');
+        log.info('Detected Illinois card-based layout, using ENHANCED card extraction method');
         
-        // Method 2a: Illinois Card-Based Faculty Extraction
-        $('div[class*="person"]').each(function() {
-            const $card = $(this);
-            
-            // Extract name from profile link
-            const $nameLink = $card.find('a[href*="/people/profiles/"]').first();
-            const name = $nameLink.text().trim();
-            
-            // Skip if no valid name
-            if (!name || name.length < 3 || name.length > 50 ||
-                name.includes('Featured Alumni') || name.includes('Faculty Directory') ||
-                name.includes('String Quartet') || name.includes('Affiliated faculty') ||
-                name.toLowerCase().includes('ensemble')) {
-                return;
-            }
-            
-            // Get profile link
-            const profileHref = $nameLink.attr('href');
-            const profileLink = profileHref ? (profileHref.startsWith('http') ? profileHref : `${baseUrl}${profileHref}`) : '';
-            
-            // Extract titles from the card structure
-            const titles = [];
-            
-            // Look for title in various card elements
-            $card.find('.profile-card__title, .person-title, [class*="title"]').each(function() {
-                const titleText = $(this).text().trim();
-                if (titleText && titleText !== name && titleText.length > 3 && titleText.length < 100 &&
-                    !titleText.includes('@') && !titleText.includes('Faculty') &&
-                    !titleText.includes('217-')) {
-                    titles.push(titleText);
-                }
-            });
-            
-            // Also check for titles in the general card text
-            const cardText = $card.text();
-            const lines = cardText.split('\n').map(line => line.trim()).filter(line => line);
-            
-            for (const line of lines) {
-                if (line && line !== name && line.length > 5 && line.length < 100 &&
-                    !line.includes('@') && !line.includes('217-') &&
-                    !line.includes('Faculty') && !line.includes('Featured Alumni') &&
-                    (line.toLowerCase().includes('professor') || 
-                     line.toLowerCase().includes('director') ||
-                     line.toLowerCase().includes('chair') ||
-                     line.toLowerCase().includes('instructor') ||
-                     line.toLowerCase().includes('lecturer') ||
-                     line.toLowerCase().includes('associate') ||
-                     line.toLowerCase().includes('assistant'))) {
-                    
-                    if (!titles.includes(line)) {
-                        titles.push(line);
-                    }
-                }
-            }
-            
-            // Extract email from card with comprehensive search
-            let email = '';
-            let emailConfidence = 0;
-            
-            // Method A: Look for mailto links
-            $card.find('a[href^="mailto:"]').each(function() {
-                const emailHref = $(this).attr('href');
-                if (emailHref) {
-                    const cleanEmail = emailHref.replace('mailto:', '').split('?')[0].trim();
-                    const confidence = calculateEmailConfidence(name, cleanEmail);
-                    if (confidence > emailConfidence && confidence > 0.3) {
-                        email = cleanEmail;
-                        emailConfidence = confidence;
-                    }
-                }
-            });
-            
-            // Method B: Extract from card text using regex
-            if (!email) {
-                const emailMatches = cardText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
-                if (emailMatches) {
-                    for (const potentialEmail of emailMatches) {
-                        // Skip generic/department emails
-                        if (!potentialEmail.includes('music@') && 
-                            !potentialEmail.includes('info@') && 
-                            !potentialEmail.includes('admin@') && 
-                            !potentialEmail.includes('contact@')) {
-                            
-                            const confidence = calculateEmailConfidence(name, potentialEmail);
-                            if (confidence > emailConfidence) {
-                                email = potentialEmail;
-                                emailConfidence = confidence;
-                            }
-                        }
-                    }
-                }
-            }
-            
-            // Extract phone from card text
-            let phone = '';
-            const phoneMatch = cardText.match(/\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/);
-            if (phoneMatch) {
-                phone = phoneMatch[0];
-            }
-            
-            // Only include if email confidence is reasonable OR has academic titles
-            const hasAcademicTitle = titles.some(title => 
-                title.toLowerCase().includes('professor') ||
-                title.toLowerCase().includes('instructor') ||
-                title.toLowerCase().includes('lecturer') ||
-                title.toLowerCase().includes('director') ||
-                title.toLowerCase().includes('chair'));
-            
-            if (emailConfidence > 0.3 || hasAcademicTitle) {
-                const finalEmail = emailConfidence > 0.3 ? email : '';
-                const emailSource = finalEmail ? (emailConfidence > 0.7 ? 'name-matched' : 'section-matched') : 'none';
-                
-                const uniqueId = `${name}-${finalEmail}-${profileLink}`;
-                if (!seenFaculty.has(uniqueId)) {
-                    seenFaculty.add(uniqueId);
-                    facultyData.push({
-                        name: name,
-                        titles: titles.slice(0, 3), // Limit to first 3 titles
-                        profileLink: profileLink,
-                        email: finalEmail,
-                        emailConfidence: emailConfidence,
-                        emailSource: emailSource,
-                        phone: phone,
-                        bio: '',
-                        socials: {
-                            youtube: '',
-                            facebook: '',
-                            instagram: '',
-                            reddit: '',
-                            linkedin: '',
-                            tiktok: ''
-                        },
-                        university: getUniversityName(request.loadedUrl),
-                        department: getDepartmentName(request.loadedUrl, $),
-                        sourceUrl: request.loadedUrl,
-                        scrapedAt: new Date().toISOString()
-                    });
-                }
+        // REPLACE OLD METHOD 2a WITH NEW ENHANCED VERSION
+        const illinoisResults = await extractMethod2Illinois($, context);
+        
+        // Add results to facultyData
+        illinoisResults.forEach(faculty => {
+            const uniqueId = `${faculty.name}-${faculty.email}-${faculty.profileLink}`;
+            if (!seenFaculty.has(uniqueId)) {
+                seenFaculty.add(uniqueId);
+                facultyData.push(faculty);
             }
         });
         
