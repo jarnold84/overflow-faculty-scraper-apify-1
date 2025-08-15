@@ -370,6 +370,13 @@ $('.views-row').each(function() {
         return;
     }
     
+    // Skip obvious non-faculty entries
+    if (name.includes('String Quartet') || 
+        name.includes('Affiliated faculty') || 
+        name.toLowerCase().includes('ensemble')) {
+        return; // Skip this entry
+    }
+    
     // Use universal profile link finder
     const profileLink = findProfileLink(name, allProfileLinks);
     
@@ -380,6 +387,11 @@ $('.views-row').each(function() {
             titles.push(titleText);
         }
     });
+    
+    // Check titles for ensemble/group patterns
+    if (titles.some(title => title.includes('Group') || title.includes('Quartet'))) {
+        return; // Skip this entry
+    }
     
     const uniqueId = `${name}-${profileLink}`;
     if (!seenFaculty.has(uniqueId)) {
@@ -409,7 +421,7 @@ $('.views-row').each(function() {
     }
 });
 
-// Method 2: Illinois-style - improved with universal profile link extraction
+// Method 2: Illinois-style - improved with broader email search
 if (facultyData.length === 0) {
     const pageText = $('body').text();
     const lines = pageText.split('\n').map(line => line.trim()).filter(line => line && line.length > 1);
@@ -431,19 +443,25 @@ if (facultyData.length === 0) {
             !currentLine.includes('Previous') &&
             !currentLine.includes('Next') &&
             !currentLine.includes('Cookie') &&
-            !currentLine.includes('Settings')) {
+            !currentLine.includes('Settings') &&
+            !currentLine.includes('String Quartet') &&
+            !currentLine.includes('Affiliated faculty') &&
+            !currentLine.toLowerCase().includes('ensemble')) {
+            
+            const name = currentLine;
             
             // Look ahead to find the email and collect titles in between
             let foundEmail = '';
             let titles = [];
+            let bestConfidence = 0;
             
-            for (let j = i + 1; j < Math.min(i + 6, lines.length); j++) {
+            // Collect search text from a broader window
+            let searchText = '';
+            for (let j = i + 1; j < Math.min(i + 10, lines.length); j++) {
                 const nextLine = lines[j];
+                searchText += ' ' + nextLine;
                 
-                if (nextLine.includes('@') && nextLine.includes('.edu')) {
-                    foundEmail = nextLine;
-                    break;
-                } else if (nextLine === 'Faculty') {
+                if (nextLine === 'Faculty') {
                     // Stop if we hit "Faculty" without finding email
                     break;
                 } else if (nextLine && 
@@ -455,6 +473,19 @@ if (facultyData.length === 0) {
                 }
             }
             
+            // Enhanced email search using broader matching
+            const emailMatches = searchText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g); // Note the 'g' flag
+            if (emailMatches) {
+                // Try each email found and pick best confidence match
+                for (const potentialEmail of emailMatches) {
+                    const confidence = calculateEmailConfidence(name, potentialEmail);
+                    if (confidence > bestConfidence) {
+                        foundEmail = potentialEmail;
+                        bestConfidence = confidence;
+                    }
+                }
+            }
+            
             // If we found a valid email, this is a faculty member
             // Exclude generic department emails but allow all individual faculty emails
             if (foundEmail && 
@@ -462,17 +493,15 @@ if (facultyData.length === 0) {
                 !foundEmail.includes('info@') && 
                 !foundEmail.includes('admin@') && 
                 !foundEmail.includes('contact@')) {
-                const name = currentLine;
-                const email = foundEmail;
                 
                 // Use universal profile link finder
                 const profileLink = findProfileLink(name, allProfileLinks);
                 
-                const emailConfidence = calculateEmailConfidence(name, email);
+                const emailConfidence = bestConfidence;
                 const emailSource = emailConfidence > 0.7 ? 'name-matched' : (emailConfidence > 0.3 ? 'section-matched' : 'none');
                 
                 // Only include if email confidence is reasonable
-                const finalEmail = emailConfidence > 0.3 ? email : '';
+                const finalEmail = emailConfidence > 0.3 ? foundEmail : '';
                 
                 const uniqueId = `${name}-${finalEmail}`;
                 if (!seenFaculty.has(uniqueId)) {
@@ -525,7 +554,10 @@ if (facultyData.length === 0) {
             !name.includes('Faculty Directory') && !name.includes('Resources') &&
             !name.includes('Open Positions') && !name.includes('Faculty by Area') &&
             !href.includes('index.php') && !href.includes('resources') &&
-            !href.includes('open-positions') && !href.includes('faculty-area')) {
+            !href.includes('open-positions') && !href.includes('faculty-area') &&
+            !name.includes('String Quartet') &&
+            !name.includes('Affiliated faculty') &&
+            !name.toLowerCase().includes('ensemble')) {
             
             // Use universal profile link finder (more reliable than local extraction)
             const profileLink = findProfileLink(name, allProfileLinks);
@@ -561,6 +593,11 @@ if (facultyData.length === 0) {
                 if (cleanTitle && cleanTitle.length > 3 && cleanTitle.length < 100) {
                     titles.push(cleanTitle);
                 }
+            }
+            
+            // Check titles for ensemble/group patterns
+            if (titles.some(title => title.includes('Group') || title.includes('Quartet'))) {
+                return; // Skip this entry
             }
             
             const uniqueId = `${name}-${profileLink}`;
@@ -610,7 +647,10 @@ if (true) {
         if (!name || name.length < 3 || name.length > 50 ||
             name.includes('Email') || name.includes('Phone') ||
             name.includes('Office') || name.includes('Room') ||
-            name.includes('Directory') || name.includes('Faculty')) {
+            name.includes('Directory') || name.includes('Faculty') ||
+            name.includes('String Quartet') ||
+            name.includes('Affiliated faculty') ||
+            name.toLowerCase().includes('ensemble')) {
             return;
         }
         
@@ -652,12 +692,20 @@ if (true) {
         if (!email || titles.length === 0) {
             const rowText = $(this).text();
             
-            // Extract email with confidence check
-            const emailMatch = rowText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-            if (emailMatch && !email) {
-                const confidence = calculateEmailConfidence(name, emailMatch[0]);
-                if (confidence > 0.3) {
-                    email = emailMatch[0];
+            // Enhanced email search using broader matching
+            const emailMatches = rowText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
+            if (emailMatches && !email) {
+                let bestConfidence = 0;
+                for (const potentialEmail of emailMatches) {
+                    const confidence = calculateEmailConfidence(name, potentialEmail);
+                    if (confidence > bestConfidence) {
+                        email = potentialEmail;
+                        bestConfidence = confidence;
+                    }
+                }
+                // Only use if confidence is reasonable
+                if (bestConfidence <= 0.3) {
+                    email = '';
                 }
             }
             
@@ -674,6 +722,11 @@ if (true) {
             if (cleanedText && cleanedText.length > 5 && cleanedText.length < 100) {
                 titles.push(cleanedText);
             }
+        }
+        
+        // Check titles for ensemble/group patterns
+        if (titles.some(title => title.includes('Group') || title.includes('Quartet'))) {
+            return; // Skip this entry
         }
         
         // Only add if we have a reasonable name (at least first + last)
@@ -787,17 +840,31 @@ if (facultyData.length > 0) {
             if (nameMatch) {
                 const potentialName = nameMatch[1];
                 
-                // Verify this looks like a faculty name
+                // Verify this looks like a faculty name and skip ensembles
                 if (potentialName.split(' ').length >= 2 && potentialName.length < 50 &&
                     !potentialName.includes('Email') && !potentialName.includes('Phone') &&
-                    !potentialName.includes('Room') && !potentialName.includes('Office')) {
+                    !potentialName.includes('Room') && !potentialName.includes('Office') &&
+                    !potentialName.includes('String Quartet') &&
+                    !potentialName.includes('Affiliated faculty') &&
+                    !potentialName.toLowerCase().includes('ensemble')) {
                     
-                    // Extract email from the same text
-                    const emailMatch = rowText.match(/([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/);
-                    const email = emailMatch ? emailMatch[1] : '';
+                    // Enhanced email search using broader matching
+                    const emailMatches = rowText.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g);
+                    let email = '';
+                    let bestConfidence = 0;
+                    
+                    if (emailMatches) {
+                        for (const potentialEmail of emailMatches) {
+                            const confidence = calculateEmailConfidence(potentialName, potentialEmail);
+                            if (confidence > bestConfidence) {
+                                email = potentialEmail;
+                                bestConfidence = confidence;
+                            }
+                        }
+                    }
                     
                     // Only use email if confidence is reasonable
-                    const emailConfidence = calculateEmailConfidence(potentialName, email);
+                    const emailConfidence = bestConfidence;
                     const finalEmail = emailConfidence > 0.3 ? email : '';
                     
                     // Extract phone from the same text
@@ -845,7 +912,36 @@ if (facultyData.length > 0) {
     }
 }
 
+// Final cleanup: Filter out any remaining invalid entries
+const cleanedFacultyData = facultyData.filter(faculty => {
+    return faculty.name && 
+           faculty.name !== 'undefined' &&
+           faculty.name !== 'null' &&
+           !faculty.name.toLowerCase().includes('jupiter') &&
+           !faculty.name.includes('String Quartet') &&
+           !faculty.name.includes('Affiliated faculty') &&
+           !faculty.name.toLowerCase().includes('ensemble') &&
+           faculty.name.split(' ').length >= 2; // Must have at least first and last name
+});
+
+// Replace facultyData with cleaned version
+facultyData.length = 0;
+facultyData.push(...cleanedFacultyData);
+
 log.info(`Found ${facultyData.length} unique faculty members`);
+
+// Email extraction statistics
+if (facultyData.length > 0) {
+    const emailStats = {
+        total: facultyData.length,
+        withEmail: facultyData.filter(f => f.email).length,
+        highConfidence: facultyData.filter(f => f.emailConfidence > 0.7).length,
+        mediumConfidence: facultyData.filter(f => f.emailConfidence > 0.3 && f.emailConfidence <= 0.7).length
+    };
+    
+    log.info(`Email extraction stats:`, emailStats);
+    log.info(`Email success rate: ${((emailStats.withEmail / emailStats.total) * 100).toFixed(1)}%`);
+}
 
 // Only save data if we found faculty members (avoid saving pagination pages)
 if (facultyData.length > 0) {
